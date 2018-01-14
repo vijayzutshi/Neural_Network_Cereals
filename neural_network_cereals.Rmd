@@ -1,0 +1,127 @@
+---
+title: "Neural Network Model - Cereals Rating"
+output: pdf_document
+---
+
+## Project
+
+Neural network is an information-processing machine and can be viewed as analogous to human nervous system. A neural network is a model characterized by an activation function, which is used by interconnected information processing units to transform input into output. A neural network has always been compared to human nervous system. This project deals with fitting a neural network model. For this project we use a subset of cereal dataset shared by Carnegie Mellon University (CMU). The details of the dataset are on the following link: http://lib.stat.cmu.edu/DASL/Datafiles/Cereals.html. The objective is to predict rating of the cereals variables such as calories, proteins, fat etc. We will be using rating as dependent variable and calories, protiens, fat, sodium and fibre as independent variable.
+
+## Library
+
+```{r echo = FALSE}
+library(caret)
+library(neuralnet)
+library(boot)
+library(plyr)
+library(matrixStats)
+```
+
+## Data 
+
+```{r echo=FALSE}
+setwd("C:/Program Files/RStudio/NeuralNetwork")
+dataCereals <- read.csv("cereals.csv", header = TRUE)
+str(dataCereals)
+set.seed(80)
+```
+
+## Training and Test Data Sets
+
+```{r echo = FALSE}
+samplesize <- 0.60 * nrow(dataCereals)
+inTrain <- sample(1:nrow(dataCereals), size = samplesize)
+training <- dataCereals[inTrain, ]
+testing <- dataCereals[-inTrain, ]
+```
+
+## Scaling of Data
+
+We will first scale the dataset. The scaling of data is essential otherwise a variable may have large impact on the prediction variable only because of its scale. For this purpose we will use the min-max normalization 
+
+```{r echo = FALSE}
+max <- apply(dataCereals, 2, max)
+min <- apply(dataCereals, 2, min)
+scaled <- as.data.frame(scale(dataCereals, center = min, scale = max - min))
+```
+
+## Fit Neural Network
+
+```{r echo = FALSE}
+trainNN <- scaled[inTrain, ]
+testNN <- scaled[-inTrain, ]
+set.seed(2)
+NN <- neuralnet(rating ~ calories + protein + fat + sodium + fiber,
+                trainNN, hidden = 3, linear.output = TRUE)
+```
+
+## Plot Neural Network
+
+Our model has 3 hidden layers. The black lines show the connections with weights. While the blue line displays the bias term
+
+```{r echo = FALSE}
+plot(NN)
+```
+
+## Predict Rating
+
+We must remember that the predicted rating will be scaled and it must be transformed in order to make a comparision with real rating
+
+```{r echo = FALSE}
+predict_testNN <- compute(NN, testNN[, c(1:5)])
+predict_testNN <- (predict_testNN$net.result * max(dataCereals$rating) - 
+                     min(dataCereals$rating)) + min(dataCereals$rating)
+plot(testing$rating, predict_testNN, col='blue', pch=16, 
+     ylab ="Predicted Rating NN", xlab = "Real Rating")
+abline(0,1)
+```
+
+## Calculate Root Mean Square Error (RMSE)
+
+```{r echo = FALSE}
+RMSE.NN <- (sum((testing$rating - predict_testNN)^2) / nrow(testing)) ^ 0.5
+```
+
+## Cross-Validation of Neural Network
+
+K-Fold cross-validation
+
+```{r echo = FALSE}
+set.seed(50)
+k = 100
+RMSE.NN <- NULL
+List <- list()
+for (j in 10:65){
+  for (i in 1:k){
+    index <- sample(1:nrow(dataCereals), j)
+    trainNN <- scaled[index, ]
+    testNN <- scaled[-index, ]
+    testing <- dataCereals[-index, ]
+    NN <- neuralnet(rating ~ calories + protein + fat + sodium + fiber,
+                    trainNN, hidden = 3, linear.output = TRUE)
+    predict_testNN <- compute(NN, testNN[, c(1:5)])
+    predict_testNN <- (predict_testNN$net.result * max(dataCereals$rating) - 
+                         min(dataCereals$rating)) + min(dataCereals$rating)
+    RMSE.NN [i] <- (sum((testing$rating - predict_testNN)^2) / nrow(testing)) ^ 0.5
+  }
+  List[[j]] <- RMSE.NN
+}
+
+Matrix.RMSE <- do.call(cbind, List)
+```
+
+## Box Plot
+
+The boxplot shows that the median RMSE across 100 samples when length of the training set is fixed to 65 is 13.7
+
+```{r echo = FALSE}
+boxplot(Matrix.RMSE[, 56], ylab = "RMSE", main = "RMSE Boxplot(length of training set = 65")
+med <- colMedians(Matrix.RMSE)
+x <- seq(10,65)
+plot(med~x, type = "l", xlab = "Length of training set",
+     ylab = "Median RMSE", main = "Variation of RMSE with length of training set")
+```
+
+## Conclusion
+
+The plot shows that the median RMSE of our model decreases as the length of the training data set increases. So the model accuarcy is dependent on the lenth of the training data set. This shows that the performance of neural network model is sensitive to training - test split
